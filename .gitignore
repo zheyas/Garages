@@ -9,4 +9,9 @@ media/
 .venv/
 __pycache__
 venv/
-.venv/
+.venv/# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Результаты отчетов
+result.xlsx
