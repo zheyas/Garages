@@ -1,53 +1,12 @@
-# Byte-compiled / optimized / DLL files .gitignore
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Virtual environment
-.venv/
-env/
-venv/
-ENV/
-# Django stuff:
-*.log
 db.sqlite3
+*.env
 media/
-staticfiles/
-static_root/
-local_settings.py
-
-# VS Code
-.vscode/
-
-# IDEs
+.idea
 .idea/
-*.sublime-workspace
-*.sublime-project
-
-# macOS
-.DS_Store
-
-# dotenv
-.env
-# Test output
-.coverage
-htmlcov/
-*.cover
-
-# pip
-pip-log.txt
-id_rsa_github
-id_rsa_github.pub
-mailsender.dump
-# Distribution / packaging
-*.egg-info/
-dist/
-build/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-result.xlsx
+.venv
+.venv/
+__pycache__
+venv/
+.venv/
