@@ -1,195 +1,239 @@
-import pandas as pd
-from datetime import datetime, timedelta
 import calendar
 import re
+from datetime import date, timedelta
+
+import pandas as pd
+
+# Константы для имён колонок и статусов
+RENT_GARAGE_COL = "Номер гаража"
+RENT_DATE_COL = "Дата оплаты"
+RENT_SUM_COL = "Сумма оплаты"
+STATUS_COL = "Статус"
+
+STATUS_PAID = "Оплачено"
+STATUS_OVERDUE = "Просрочено"
+STATUS_PENDING = "Не оплачено"
 
 
-def normalize_arenda_columns(df):
+def normalize_rent_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Переименовывает колонки с арендой в стандартизированные:
+      * гараж → Номер гаража
+      * дата  → Дата оплаты
+      * сумм  → Сумма оплаты
+    """
     rename_map = {}
     for col in df.columns:
-        col_lower = str(col).lower()
-        if 'гараж' in col_lower:
-            rename_map[col] = 'Номер гаража'
-        elif 'дата' in col_lower:
-            rename_map[col] = 'Дата оплаты'
-        elif 'сумм' in col_lower:
-            rename_map[col] = 'Сумма оплаты'
-    df = df.rename(columns=rename_map)
-    return df
+        low = str(col).lower()
+        if "гараж" in low:
+            rename_map[col] = RENT_GARAGE_COL
+        elif "дата" in low:
+            rename_map[col] = RENT_DATE_COL
+        elif "сумм" in low:
+            rename_map[col] = RENT_SUM_COL
+    return df.rename(columns=rename_map)
 
 
-def load_excel(path):
+def load_rent_excel(path: str) -> pd.DataFrame:
+    """
+    Подгружает xlsx с арендой и сразу нормализует колонки.
+    """
     df = pd.read_excel(path)
-    df = normalize_arenda_columns(df)
-    return df
+    return normalize_rent_columns(df)
 
 
-def short_header(col):
-    s = str(col).lower()
-    s = re.sub(r'[^а-яa-z0-9 ]', '', s)
+def short_header(col) -> str:
+    """
+    Превращает заголовок столбца выписки
+    в низкоуровневое имя: 'дата', 'сумма', 'категория' или чистый текст.
+    """
+    s = re.sub(r"[^а-яa-z0-9 ]", "", str(col).lower())
     if "дата" in s:
         return "дата"
     if "сумм" in s:
         return "сумма"
     if "категор" in s or "описан" in s:
         return "категория"
-    return s
+    return s.strip()
 
 
-def load_vypiska_operations(path):
+def load_statement(path: str) -> pd.DataFrame:
+    """
+    Извлекает из банковской выписки все блоки таблиц операций,
+    склеивает их в один DataFrame и нормализует заголовки.
+    """
     df = pd.read_excel(path, header=None)
-    op_blocks = []
-    search_titles = ["дата операции", "сумма в валюте"]
     n_cols = df.shape[1]
+    blocks = []
+    titles = ["дата операции", "сумма в валюте"]
 
     i = 0
     while i < len(df):
-        row = df.iloc[i]
-        row_str = [str(cell).lower() for cell in row[:n_cols]]
-        if search_titles[0] in "".join(
-                row_str
-        ) and search_titles[1] in "".join(row_str):
-            header_row = i
-            block_rows = []
+        row_text = " ".join(df.iloc[i, :n_cols].astype(str).str.lower())
+        if all(t in row_text for t in titles):
+            header_idx = i
+            data_idxs = []
             j = i + 1
             while j < len(df):
-                next_row_str = "".join([
-                    str(x).lower() for x in df.iloc[j][:n_cols]
-                ])
-                if (search_titles[0] in
-                        next_row_str and search_titles[1]
-                        in next_row_str):
-                    break
-                if ('выписка по платёжному счёту'
-                        in next_row_str or 'продолжение на следующей странице'
-                        in next_row_str):
-                    break
-                if all(
-                        (str(v).strip() == '' or pd.isna(v))
-                        for v in df.iloc[j]
+                txt = " ".join(df.iloc[j, :n_cols].astype(str).str.lower())
+                if (
+                    any(t in txt for t in titles)
+                    or "выписка по платёжному счёту" in txt
+                    or "продолжение на следующей странице" in txt
+                    or df.iloc[j].isna().all()
+                    or df.iloc[j]
+                    .astype(str)
+                    .str.strip()
+                    .eq("")
+                    .all()
                 ):
                     break
-                block_rows.append(j)
+                data_idxs.append(j)
                 j += 1
-            # Обрезаем nan-колонки в заголовке
-            cols = df.iloc[header_row, :n_cols].tolist()
-            valid_cols_idx = [
-                ii for ii, c in enumerate(cols) if str(
-                    c
-                ).strip() and str(c).lower() != "nan"]
-            cols = [cols[ii] for ii in valid_cols_idx]
-            block_df = df.iloc[block_rows, valid_cols_idx].copy()
-            block_df.columns = cols
-            op_blocks.append(block_df)
+
+            raw_cols = df.iloc[header_idx, :n_cols].tolist()
+            valid = [
+                idx
+                for idx, c in enumerate(raw_cols)
+                if str(c).strip() and str(c).lower() != "nan"
+            ]
+            cols = [raw_cols[idx] for idx in valid]
+
+            block = df.iloc[data_idxs, valid].copy()
+            block.columns = cols
+            blocks.append(block)
+
             i = j
         else:
             i += 1
-    if not op_blocks:
-        raise ValueError("Не найдено ни одной таблицы операций!")
-    all_ops_df = pd.concat(op_blocks, ignore_index=True)
-    all_ops_df.columns = [short_header(c) for c in all_ops_df.columns]
-    return all_ops_df
+
+    if not blocks:
+        raise ValueError("Не найдено ни одной таблицы операций в выписке!")
+
+    all_ops = pd.concat(blocks, ignore_index=True)
+    all_ops.columns = [short_header(c) for c in all_ops.columns]
+    return all_ops
 
 
-def normalize_sum(val):
-    """Преобразует сумму из выписки Сбера к float"""
+def normalize_sum(val) -> float:
+    """
+    Приводит сумму из выписки к float, убирая пробелы, '+' и меняя ','→'.'
+    """
     try:
-        sval = (
-            str(val)
-            .strip()
-            .replace(' ', '')
-            .replace('+', '')
-            .replace(',', '.')
-        )
-        return float(sval)
+        s = str(val).replace(" ", "").replace("+", "").replace(",", ".")
+        return float(s)
     except (ValueError, TypeError):
         return None
 
 
-def extract_first_date(val):
-    val = str(val) if not isinstance(val, str) else val
-    m = re.search(r'(\d{2}\.\d{2}\.\d{4})', val)
-    return m.group(1) if m else None
+def extract_first_date(val) -> str:
+    """
+    Извлекает первую дату формата dd.mm.yyyy из строки.
+    """
+    m = re.search(r"\d{2}\.\d{2}\.\d{4}", str(val))
+    return m.group(0) if m else None
 
 
-def analyze_payments(arenda_df, vypiska_df):
-    today = datetime.today().date()
-    result = []
+def analyze_payments(rent_df: pd.DataFrame,
+                     stmt_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Сверяет суммы и даты из арендных данных и выписки,
+    возвращает DataFrame с колонками:
+      * Номер гаража
+      * Дата оплаты (исправленная)
+      * Сумма оплаты
+      * Статус
+    """
+    today = date.today()
 
-    vypiska_df.columns = [str(c).strip().lower() for c in vypiska_df.columns]
-    # print("Vypiska DF columns:", list(vypiska_df.columns))
-
-    sum_cols = [c for c in vypiska_df.columns if 'сумм' in c or 'сумма' in c]
-    date_cols = [c for c in vypiska_df.columns if 'дата' in c]
+    stmt = stmt_df.copy()
+    stmt.columns = [str(c).strip().lower() for c in stmt.columns]
+    sum_cols = [c for c in stmt.columns if "сумм" in c or "сумма" in c]
+    date_cols = [c for c in stmt.columns if "дата" in c]
     if not sum_cols or not date_cols:
         raise ValueError(
-            "Не найдены колонки с суммой или датой в выписке."
-            " Проверь формат файла."
+            "В выписке не найдены колонки с суммой или датой!"
         )
 
-    for _, row in arenda_df.iterrows():
-        garage = row["Номер гаража"]
+    sum_col = sum_cols[0]
+    date_col = date_cols[0]
+    stmt[sum_col + "_num"] = stmt[sum_col].apply(normalize_sum)
+
+    rows = []
+    for _, row in rent_df.iterrows():
+        garage = row.get(RENT_GARAGE_COL)
         try:
-            raw_date = pd.to_datetime(row["Дата оплаты"]).date()
+            raw_date = pd.to_datetime(row.get(RENT_DATE_COL)).date()
         except Exception:
             raw_date = today
 
         try:
-            sum_arenda = float(row["Сумма оплаты"])
+            rent_sum = float(row.get(RENT_SUM_COL))
         except Exception:
-            sum_arenda = None
+            rent_sum = None
 
-        # Корректировка даты
-        year = today.year
-        target_month = today.month
-        last_day = calendar.monthrange(year, target_month)[1]
-        corrected_day = min(raw_date.day, last_day)
-        corrected_date = raw_date.replace(
-            year=year, month=target_month, day=corrected_day
+        year, mon = today.year, today.month
+        last_day = calendar.monthrange(year, mon)[1]
+        day = min(raw_date.day, last_day)
+        pay_date = raw_date.replace(year=year, month=mon, day=day)
+        deadline = pay_date + timedelta(days=3)
+
+        matched = stmt.loc[
+            stmt[sum_col + "_num"].round(2) == round(rent_sum, 2)
+            ].copy()  # <- здесь .copy()
+        matched.loc[:, "dt_str"] = (
+            matched[date_col]
+            .astype(str)
+            .map(extract_first_date)
         )
-        deadline = corrected_date + timedelta(days=3)
 
-        sums_vypiska = vypiska_df[sum_cols[0]].apply(normalize_sum)
-        matched = vypiska_df[sums_vypiska.round(2) == round(sum_arenda, 2)]
-
-        # Главный фикс для Сбера: достать дату из вида "02.06.2025 02.06.2025"
-        date_strings = matched[date_cols[0]].astype(str).map(
-            extract_first_date
+        dates = (
+            pd.to_datetime(
+                matched["dt_str"], format="%d.%m.%Y", errors="coerce"
+            )
+            .dt.date.dropna()
         )
-        matched_dates = pd.to_datetime(
-            date_strings, format='%d.%m.%Y', errors='coerce'
-        ).dropna()
 
-        if not matched.empty and not matched_dates.empty:
-            last_payment = matched_dates.max().date()
-            status = "Получен" if last_payment <= deadline else "Просрочен"
+        if not matched.empty and not dates.empty:
+            last_pay = dates.max()
+            status = (
+                STATUS_PAID
+                if last_pay <= deadline
+                else STATUS_OVERDUE
+            )
         else:
-            status = "Срок не наступил" if today <= deadline else "Просрочен"
+            status = (
+                STATUS_PENDING
+                if today <= deadline
+                else STATUS_OVERDUE
+            )
 
-        result.append({
-            "Номер гаража": garage,
-            "Дата оплаты": corrected_date,
-            "Сумма оплаты": sum_arenda,
-            "Статус": status
-        })
+        rows.append(
+            {
+                RENT_GARAGE_COL: garage,
+                RENT_DATE_COL: pay_date,
+                RENT_SUM_COL: rent_sum,
+                STATUS_COL: status,
+            }
+        )
 
-    return pd.DataFrame(result)
+    return pd.DataFrame(rows)
 
 
-def apply_status_styling(status):
+def apply_status_styling(status: str) -> str:
     """
-    Возвращает строку с CSS-стилями для ячейки 'Статус'
-    на основании её значения.
+    Для pandas.Style: возвращает inline-css для ячейки 'Статус'.
     """
     mapping = {
-        'Оплачено':        'background-color: #2ecc71; color: white;',
-        'Просрочено':      'background-color: #e74c3c; color: white;',
-        'Частично оплачено': 'background-color: #f1c40f; color: black;',
-        'Не оплачено':     'background-color: #95a5a6; color: white;',
+        STATUS_PAID: "background-color: #2ecc71; color: white;",
+        STATUS_OVERDUE: "background-color: #e74c3c; color: white;",
+        STATUS_PENDING: "background-color: #95a5a6; color: white;",
     }
-    # если встречается непрописанный статус — ничего не красим
-    return mapping.get(status, '')
+    return mapping.get(status, "")
 
 
-def save_to_excel(df, filename="result.xlsx"):
+def save_to_excel(df: pd.DataFrame, filename: str) -> None:
+    """
+    Сохраняет DataFrame в Excel без индекса.
+    """
     df.to_excel(filename, index=False)
