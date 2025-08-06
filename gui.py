@@ -17,7 +17,7 @@ class GarageApp:
         btn_frame.pack(fill="x", pady=10)
 
         tk.Button(
-            btn_frame, text="Загрузить Arenda.xlsx",
+            btn_frame, text="Загрузить аренду",
             command=self.load_arenda)\
             .pack(side="left", padx=5)
         tk.Button(
