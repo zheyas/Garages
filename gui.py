@@ -16,11 +16,17 @@ class GarageApp:
         btn_frame = tk.Frame(root)
         btn_frame.pack(fill="x", pady=10)
 
-        tk.Button(btn_frame, text="Загрузить Arenda.xlsx", command=self.load_arenda)\
+        tk.Button(
+            btn_frame, text="Загрузить Arenda.xlsx",
+            command=self.load_arenda)\
             .pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Загрузить выписку", command=self.load_vypiska)\
+        tk.Button(
+            btn_frame, text="Загрузить выписку",
+            command=self.load_vypiska)\
             .pack(side="left", padx=5)
-        tk.Button(btn_frame, text="Проверить оплаты", command=self.check_payments)\
+        tk.Button(
+            btn_frame, text="Проверить оплаты",
+            command=self.check_payments)\
             .pack(side="left", padx=5)
 
         # Фрейм для таблицы
@@ -31,9 +37,15 @@ class GarageApp:
         self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
         for col in columns:
             self.tree.heading(col, text=col)
-            self.tree.column(col, anchor="center", width=100 if col!="Сумма оплаты" else 120, stretch=True)
+            self.tree.column(
+                col, anchor="center",
+                width=100 if col != "Сумма оплаты" else 120,
+                stretch=True
+            )
         # Вертикальный скроллбар
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        vsb = ttk.Scrollbar(
+            tree_frame, orient="vertical", command=self.tree.yview
+        )
         self.tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -49,7 +61,9 @@ class GarageApp:
         self.result_df = None
 
     def load_arenda(self):
-        path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel files", "*.xlsx")]
+        )
         if not path:
             return
         try:
@@ -58,25 +72,36 @@ class GarageApp:
             self.arenda_df = df
             messagebox.showinfo("Успех", "Файл аренды загружен.")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось загрузить файл аренды:\n{e}")
+            messagebox.showerror(
+                "Ошибка", f"Не удалось загрузить файл аренды:\n{e}"
+            )
 
     def load_vypiska(self):
-        path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel files", "*.xlsx")]
+        )
         if not path:
             return
         try:
             self.vypiska_df = back.load_vypiska_operations(path)
             messagebox.showinfo("Успех", "Файл выписки загружен.")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось загрузить файл выписки:\n{e}")
+            messagebox.showerror(
+                "Ошибка",
+                f"Не удалось загрузить файл выписки:\n{e}")
 
     def check_payments(self):
         if self.arenda_df is None or self.vypiska_df is None:
-            messagebox.showwarning("Внимание", "Загрузите оба файла прежде чем проверять оплаты.")
+            messagebox.showwarning(
+                "Внимание",
+                "Загрузите оба файла прежде чем проверять оплаты."
+            )
             return
 
         try:
-            self.result_df = back.analyze_payments(self.arenda_df, self.vypiska_df)
+            self.result_df = back.analyze_payments(
+                self.arenda_df, self.vypiska_df
+            )
             back.save_to_excel(self.result_df, "result.xlsx")
         except Exception as e:
             messagebox.showerror("Ошибка при анализе", str(e))
@@ -95,7 +120,10 @@ class GarageApp:
             )
             self.tree.insert("", "end", values=vals, tags=(row["Статус"],))
 
-        messagebox.showinfo("Готово", "Проверка завершена, отчет сохранён в result.xlsx.")
+        messagebox.showinfo(
+            "Готово",
+            "Проверка завершена, отчет сохранён в result.xlsx."
+        )
 
         # Открываем отдельное окно с графиком
         self.show_chart_window()
